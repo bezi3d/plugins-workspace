@@ -4,6 +4,7 @@
 
 use std::{future::Future, pin::Pin, str::FromStr, sync::Arc, time::Duration};
 
+use futures_util::StreamExt;
 use http::{header, HeaderMap, HeaderName, HeaderValue, Method, StatusCode};
 use reqwest::{redirect::Policy, NoProxy};
 use serde::{Deserialize, Serialize};
@@ -386,13 +387,34 @@ pub async fn fetch_send<R: Runtime>(
 pub(crate) async fn fetch_read_body<R: Runtime>(
     webview: Webview<R>,
     rid: ResourceId,
-) -> crate::Result<tauri::ipc::Response> {
+    channel: tauri::ipc::Channel<&[u8]>,
+) -> crate::Result<()> {
     let res = {
         let mut resources_table = webview.resources_table();
         resources_table.take::<ReqwestResponse>(rid)?
     };
+
     let res = Arc::into_inner(res).unwrap().0;
-    Ok(tauri::ipc::Response::new(res.bytes().await?.to_vec()))
+    let mut stream = res.bytes_stream();
+
+    while let Some(chunk) = stream.next().await {
+        match chunk {
+            Ok(bytes) => {
+                // Skip empty chunks
+                if bytes.len() > 0 {
+                    channel.send(&bytes)?;
+                }
+            }
+            Err(e) => {
+                return Err(e.into());
+            }
+        }
+    }
+
+    // Send an empty chunk to signal the end of the stream
+    channel.send(&[])?;
+
+    Ok(())
 }
 
 // forbidden headers per fetch spec https://fetch.spec.whatwg.org/#terminology-headers

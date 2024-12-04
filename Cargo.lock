@@ -6621,6 +6621,7 @@ name = "tauri-plugin-http"
 version = "2.0.4"
 dependencies = [
  "data-url",
+ "futures-util",
  "http",
  "regex",
  "reqwest",

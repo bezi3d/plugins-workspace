@@ -26,7 +26,7 @@
  * @module
  */
 
-import { invoke } from '@tauri-apps/api/core'
+import { invoke, Channel } from '@tauri-apps/api/core'
 
 /**
  * Configuration of a proxy that a Client should pass requests to.
@@ -206,24 +206,39 @@ export async function fetch(
     rid
   })
 
-  const body = await invoke<ArrayBuffer | number[]>(
-    'plugin:http|fetch_read_body',
-    {
-      rid: responseRid
-    }
-  )
+  // Create ReadableStream from channel messages
+  const stream = new ReadableStream({
+    start(controller) {
+      const channel = new Channel<number[]>()
+      channel.onmessage = (arr) => {
+        const chunk = new Uint8Array(arr)
 
-  const res = new Response(
-    body instanceof ArrayBuffer && body.byteLength !== 0
-      ? body
-      : body instanceof Array && body.length > 0
-        ? new Uint8Array(body)
-        : null,
-    {
-      status,
-      statusText
+        // End the stream if the chunk is empty
+        if (chunk.length === 0) {
+          controller.close()
+        } else {
+          controller.enqueue(chunk)
+        }
+      }
+
+      // Start reading body in background
+      const readPromise = invoke('plugin:http|fetch_read_body', {
+        rid: responseRid,
+        channel
+      })
+
+      // If the promise fails, make sure the stream is closed
+      readPromise.catch((e) => {
+        console.error('error reading body', e)
+        controller.error(e)
+      })
     }
-  )
+  })
+
+  const res = new Response(stream, {
+    status,
+    statusText
+  })
 
   // url and headers are read only properties
   // but seems like we can set them like this
