@@ -401,7 +401,7 @@ pub(crate) async fn fetch_read_body<R: Runtime>(
         match chunk {
             Ok(bytes) => {
                 // Skip empty chunks
-                if bytes.len() > 0 {
+                if !bytes.is_empty() {
                     channel.send(&bytes)?;
                 }
             }
