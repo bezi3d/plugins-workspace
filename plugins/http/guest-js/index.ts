@@ -206,10 +206,11 @@ export async function fetch(
     rid
   })
 
+  const channel = new Channel<number[]>()
+
   // Create ReadableStream from channel messages
   const stream = new ReadableStream({
     start(controller) {
-      const channel = new Channel<number[]>()
       channel.onmessage = (arr) => {
         const chunk = new Uint8Array(arr)
 
@@ -230,8 +231,12 @@ export async function fetch(
       // If the promise fails, make sure the stream is closed
       readPromise.catch((e) => {
         console.error('error reading body', e)
+        channel.onmessage = () => {}
         controller.error(e)
       })
+    },
+    cancel() {
+      channel.onmessage = () => {}
     }
   })
 
